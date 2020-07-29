@@ -1,5 +1,23 @@
-
+#########################################################
+#                                                       #
+#   STOCHASTIC MATRIX MODELS: STOCHASTIC GROWTH RATE    #
+#                                                       #
+#########################################################
 library(demogR)
+
+# ASSUMPTIONS CHECK LIST 
+# THESE ARE NOT ALL NECESSARY, BUT THEY ARE SUFFICIENT
+## 1. THE STOCHASTIC PROCESS IS:
+##      A. STATIONARY
+##      B. ERGODIC
+##      C. MIXING
+## 2. ALL POPULATION TRANSITION MATRICES ARE NON-NEGATIVE
+## 3. THE AVERAGE POPULATION TRANSITION MATRIX IS NON-NEGATIVE, 
+##      IRREDUCIBLE, PRIMITIVE & ERGODIC (CHECK PRIMITIVITY)
+## 4. THE STOCHASTIC PROCESS PRODUCES DEMOGRAPHIC WEAK ERGODICITY
+##    SUFFICIENT CONDITION: #3 ABOVE PLUS ALL RANDOM TRANSITION MATRICES 
+##      HAVE POSITIVE OR ZERO ELEMENTS IN THE SAME PLACES AS THE AVERAGE
+##      TRANSITION MATRIX
 
 #####################################################
 #                                                   #
