@@ -262,14 +262,229 @@ max(CV) #0.2877
 
 #####################################################
 #                                                   #
+#                     EXAMPLE 2                     #
 #  FINITE NUMBER OF POPULATION TRANSITION MATRICES  #
 #         STOCHASTIC PROCESS:  MARKOV CHAIN         #
 #                                                   #
 #####################################################
-
-## USE A1, A2, AND A3 ABOVE
+## USE A1, A2, AND A3 FROM EXAMPLE 1 ABOVE
 ## TRANSITION MATRIX
+P<- matrix(c(0.4, 0.5, 0.1, 0.3, 0.5, 0.2, 0.05, 0.55, 0.4), 3, 3)
+## FIND STATIONARY PROBABILITIES FOR MATRICES A1, A2, AND A3
+eaP<- eigen.analysis(P)
+q<- eaP$stable.age
+l_ap0<- l1^q[1]*l2^q[2]*l3^q[3]
 
+#########################################################
+# METHOD 1: MULTIPLE SAMPLE PATHS; POPULATION NUMBERS   #
+# NOTE: CONVERGENCE CHECK NEEDED BUT NOT PERFORMED HERE #
+#########################################################
+## NUMBER OF SAMPLE PATHS
+M<- 500
+## SAMPLE PATH LENGTH
+tau<- 5000
+## GENERATE SAMPLE PATHS
+omega<- t(sapply(1:M, function(x)
+{
+  w<-sample(1:3,1)
+  for(i in 2:tau)
+  {
+    w<- c(w,sample(1:3, 1, prob=P[,w[i-1]]))
+  }
+  return(w)
+}))
+## USE INITIAL AND SUBSEQUENT POPULATION NUMBERS TO ESTIMATE 
+## STOCHASTIC GROWTH RATE
+N0<- rep(500,5)
+Ltau1<- sapply(1:M, function(w)
+{
+  A_t<- A_list[[omega[w,1]]]
+  for(i in 2:tau)
+  {
+    A_t<- A_t %*% A_list[[omega[w,i]]]
+  }
+  N_tau<- A_t %*% N0
+  L_t<- sum(N_tau)/sum(N0)
+  return(L_t)
+})
+l_ap1<- exp(mean(log(Ltau1)/tau))
+
+#########################################################
+# METHOD 2: MULTIPLE SAMPLE PATHS; POPULATION STRUCTURE #
+# NOTE: USES THE PATHS GENERATED IN METHOD 1 ABOVE      #
+#########################################################
+## 2A: USE INITIAL AND SUBSEQUENT POPULATION STRUCTURE TO ESTIMATE
+## STOCHASTIC GROWTH RATE
+Y0<- N0/sum(N0)
+Ltau2<- sapply(1:M, function(w)
+{
+  Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
+  L_t<- sum(A_list[[omega[w,1]]]%*%Y0)
+  for(i in 2:tau)
+  {
+    Y_t<- A_list[[omega[w,i]]]%*%Y_t/sum(A_list[[omega[w,i]]]%*%Y_t)
+    L_t<- sum(A_list[[omega[w,i]]]%*%Y_t)*L_t
+  }
+  return(L_t)
+})
+l_ap2a<- exp(mean(log(Ltau2)/tau))
+
+## 2B: SAME AS 2A BUT CHANGES THE ORDER OF THE PRODUCT-LOG TO LOG-SUM
+logLtau<- sapply(1:M, function(w)
+{
+  Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
+  loglt_sum<- log(sum(A_list[[omega[w,1]]]%*%Y0))
+  for(i in 2:tau)
+  {
+    Y_t<- A_list[[omega[w,i]]]%*%Y_t/sum(A_list[[omega[w,i]]]%*%Y_t)
+    loglt_sum<- log(sum(A_list[[omega[w,i]]]%*%Y_t))+loglt_sum
+  }
+  return(loglt_sum)
+})
+l_ap2b<- exp(mean(logLtau/tau))
+
+
+### TEST CONVERGENCE
+#### CHECK log(Ltau2) IS APPROXIMATELY NORMALLY DISTRIBUTED
+# 2A:
+hist(log(Ltau2))
+qqnorm(log(Ltau2))
+qqline(log(Ltau2), col="red", lty=3)
+# 2B: 
+hist(logLtau)
+qqnorm(logLtau)
+qqline(logLtau, col="red", lty=3)
+
+#### CHECK THAT THE QUANTILES OF EARLIER AND LATER RUNS ARE SIMILAR
+#### AND DISTRIBUTION IS NOT CHANGING -- MAY NEED LARGER TAU
+##### RERUN ABOVE BUT STORE LOG OF ANNUAL GROWTH RATES 
+##### (DONE WITH METHOD 2B BUT CAN ALSO BE DONE WITH 2A)
+logl_t<- sapply(1:M, function(w)
+{
+  Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
+  loglt<- log(sum(A_list[[omega[w,1]]]%*%Y0))
+  for(i in 2:tau)
+  {
+    Y_t<- A_list[[omega[w,i]]]%*%Y_t/sum(A_list[[omega[w,i]]]%*%Y_t)
+    loglt<- c(loglt, log(sum(A_list[[omega[w,i]]]%*%Y_t)))
+  }
+  return(loglt)
+})
+##### COMPARE QUANTILES FROM t=4900 and t=5000
+qqplot(colSums(logl_t[1:4900,]), colSums(logl_t))
+abline(0,1, col="red", lty=3)
+
+##### COMPARE QUANTILES FROM t=4500 and t=5000
+qqplot(colSums(logl_t[1:4500,]), colSums(logl_t))
+abline(0,1, col="red", lty=3)
+
+##### COMPARE QUANTILES FROM t=4000 and t=1000
+qqplot(colSums(logl_t[1:4000,]), colSums(logl_t))
+abline(0,1, col="red", lty=3)
+
+##### NOTE THAT THE GROWTH RATE OF A GIVEN RUN HAS CONVERGED
+x<- sample(1:M, 1)
+plot(1:tau, cumsum(logl_t[,x])/1:tau, type = "l")
+abline(sum(logl_t[,x])/tau,0,col="red", lty=3)
+
+##### WHAT ABOUT LOG GROWTH?
+## SAMPLE PATH LENGTH
+tau2<- 100000
+## GENERATE SAMPLE PATHS
+omega2<- sample(1:3,1)
+for(i in 2:tau2)
+{
+  omega2<- c(omega2,sample(1:3, 1, prob=P[,omega2[i-1]]))
+}
+
+## METHOD 2B WITH logL_t STORED AND LOG GROWTH PLOT
+Y_t<- A_list[[omega2[1]]]%*%Y0/sum(A_list[[omega2[1]]]%*%Y0)
+logL_t<- log(sum(A_list[[omega2[1]]]%*%Y0))
+for(i in 2:tau2)
+{
+  Y_t<- A_list[[omega2[i]]]%*%Y_t/sum(A_list[[omega2[i]]]%*%Y_t)
+  logL_t<- c(logL_t, log(sum(A_list[[omega2[i]]]%*%Y_t))+logL_t[i-1])
+}
+plot(1:tau2, logL_t, type = "l")
+points(1:tau2, logL_t[1]+logL_t[tau2]/tau2*1:tau2, type="l", col="red", lty=3)
+# SLOPE AT LATER TIMES SHOULD BE SIMILAR TO SLOPE OF DOTTED RED LINE
+# GIVEN ENOUGH TIME HAS PASSED
+
+##### 2C: CONSIDER 2B RAN LIKE EXAMPLE 2 USING STABLE MATRIX PROBABILITIES
+omega2<- matrix(sample(1:3, replace=TRUE, M*tau, prob=q), M, tau)
+logLtau2<- sapply(1:M, function(w)
+{
+  Y_t<- A_list[[omega2[w,1]]]%*%Y0/sum(A_list[[omega2[w,1]]]%*%Y0)
+  loglt_sum<- log(sum(A_list[[omega2[w,1]]]%*%Y0))
+  for(i in 2:tau)
+  {
+    Y_t<- A_list[[omega2[w,i]]]%*%Y_t/sum(A_list[[omega2[w,i]]]%*%Y_t)
+    loglt_sum<- log(sum(A_list[[omega2[w,i]]]%*%Y_t))+loglt_sum
+  }
+  return(loglt_sum)
+})
+l_ap2c<- exp(mean(logLtau2/tau))
+
+### TEST CONVERGENCE
+#### CHECK log(Ltau2) IS APPROXIMATELY NORMALLY DISTRIBUTED
+# 2C:
+hist(logLtau2)
+qqnorm(logLtau2)
+qqline(logLtau2, col="red", lty=3)
+
+#### CHECK THAT THE QUANTILES OF EARLIER AND LATER RUNS ARE SIMILAR
+#### AND DISTRIBUTION IS NOT CHANGING -- MAY NEED LARGER TAU
+logl_t2<- sapply(1:M, function(w)
+{
+  Y_t<- A_list[[omega2[w,1]]]%*%Y0/sum(A_list[[omega2[w,1]]]%*%Y0)
+  loglt<- log(sum(A_list[[omega2[w,1]]]%*%Y0))
+  for(i in 2:tau)
+  {
+    Y_t<- A_list[[omega2[w,i]]]%*%Y_t/sum(A_list[[omega2[w,i]]]%*%Y_t)
+    loglt<- c(loglt, log(sum(A_list[[omega2[w,i]]]%*%Y_t)))
+  }
+  return(loglt)
+})
+##### COMPARE QUANTILES FROM t=4900 and t=5000
+qqplot(colSums(logl_t2[1:4900,]), colSums(logl_t2))
+abline(0,1, col="red", lty=3)
+
+##### COMPARE QUANTILES FROM t=4500 and t=5000
+qqplot(colSums(logl_t2[1:4500,]), colSums(logl_t2))
+abline(0,1, col="red", lty=3)
+
+##### COMPARE QUANTILES FROM t=4000 and t=1000
+qqplot(colSums(logl_t2[1:4000,]), colSums(logl_t2))
+abline(0,1, col="red", lty=3)
+
+##### NOTE THAT THE GROWTH RATE OF A GIVEN RUN HAS CONVERGED
+x<- sample(1:M, 1)
+plot(1:tau, cumsum(logl_t2[,x])/1:tau, type = "l")
+abline(sum(logl_t2[,x])/tau,0,col="red", lty=3)
+
+##### LOG GROWTH
+## SAMPLE PATH LENGTH
+tau2<- 100000
+## GENERATE SAMPLE PATHS
+omega3<- sample(1:3, replace=TRUE, tau2, prob=q)
+
+## METHOD 2B WITH logL_t STORED AND LOG GROWTH PLOT
+Y_t<- A_list[[omega3[1]]]%*%Y0/sum(A_list[[omega3[1]]]%*%Y0)
+logL_t<- log(sum(A_list[[omega3[1]]]%*%Y0))
+for(i in 2:tau2)
+{
+  Y_t<- A_list[[omega3[i]]]%*%Y_t/sum(A_list[[omega3[i]]]%*%Y_t)
+  logL_t<- c(logL_t, log(sum(A_list[[omega3[i]]]%*%Y_t))+logL_t[i-1])
+}
+plot(1:tau2, logL_t, type = "l")
+points(1:tau2, logL_t[1]+logL_t[tau2]/tau2*1:tau2, type="l", col="red", lty=3)
+
+
+##################################################
+# METHOD 3: AN APPROXIMATION FORMULA EXISTS      # 
+#           UNDER CERTAIN CONDITIONS; NEED TO    #
+#            REFER TO TULJAPURKAR 1990, CH 12    #   
+##################################################
 
 
 #######################################################
@@ -278,4 +493,4 @@ max(CV) #0.2877
 #             STOCHASTIC PROCESS:  IID                #
 #                                                     #
 #######################################################
-
+# METHODS 1-3 APPLY TO THIS CASE AS WELL
