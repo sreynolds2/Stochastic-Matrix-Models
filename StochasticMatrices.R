@@ -57,19 +57,20 @@ A<- p1*A1+p2*A2+p3*A3
 ea<- eigen.analysis(A)
 lA<- ea$lambda1
 
-##################################################
-# METHOD 1: MULTIPLE SAMPLE PATHS                #
-# NOTE: NEED TO CHECK CONVERGENCE FOR ALL CASES  #
-##################################################
+#########################################################
+# METHOD 1: MULTIPLE SAMPLE PATHS; POPULATION NUMBERS   #
+# NOTE: CONVERGENCE CHECK NEEDED BUT NOT PERFORMED HERE #
+#########################################################
 ## NUMBER OF SAMPLE PATHS
 M<- 1000
 ## SAMPLE PATH LENGTH
 tau<- 500
 ## GENERATE SAMPLE PATHS
 omega<- matrix(sample(1:3, tau*M, replace=TRUE, prob=c(p1,p2,p3)), M, tau)
-## 1A: USE INITIAL AND SUBSEQUENT POPULATION NUMBERS
+## USE INITIAL AND SUBSEQUENT POPULATION NUMBERS TO ESTIMATE 
+## STOCHASTIC GROWTH RATE
 N0<- rep(500,5)
-Ltau_A<- sapply(1:M, function(w)
+Ltau1<- sapply(1:M, function(w)
 {
   A_t<- A_list[[omega[w,1]]]
   for(i in 2:tau)
@@ -80,11 +81,16 @@ Ltau_A<- sapply(1:M, function(w)
   L_t<- sum(N_tau)/sum(N0)
   return(L_t)
 })
-l_ap1a<- exp(mean(log(Ltau_A)/tau))
+l_ap1<- exp(mean(log(Ltau1)/tau))
 
-## 1B: USE INITIAL AND SUBSEQUENT POPULATION STRUCTURE
+#########################################################
+# METHOD 2: MULTIPLE SAMPLE PATHS; POPULATION STRUCTURE #
+# NOTE: USES THE PATHS GENERATED IN METHOD 1 ABOVE      #
+#########################################################
+## 2A: USE INITIAL AND SUBSEQUENT POPULATION STRUCTURE TO ESTIMATE
+## STOCHASTIC GROWTH RATE
 Y0<- N0/sum(N0)
-Ltau_B<- sapply(1:M, function(w)
+Ltau2<- sapply(1:M, function(w)
 {
   Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
   L_t<- sum(A_list[[omega[w,1]]]%*%Y0)
@@ -95,50 +101,106 @@ Ltau_B<- sapply(1:M, function(w)
   }
   return(L_t)
 })
-l_ap1b<- exp(mean(log(Ltau_B)/tau))
+l_ap2a<- exp(mean(log(Ltau2)/tau))
 
-## 1C: SAME AS 1B BUT CHANGES THE ORDER OF THE PRODUCT-LOG TO LOG-SUM
-logltau_sum<- sapply(1:M, function(w)
+## 2B: SAME AS 2A BUT CHANGES THE ORDER OF THE PRODUCT-LOG TO LOG-SUM
+logLtau<- sapply(1:M, function(w)
 {
   Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
-  logl_t<- log(sum(A_list[[omega[w,1]]]%*%Y0))
+  loglt_sum<- log(sum(A_list[[omega[w,1]]]%*%Y0))
   for(i in 2:tau)
   {
     Y_t<- A_list[[omega[w,i]]]%*%Y_t/sum(A_list[[omega[w,i]]]%*%Y_t)
-    logl_t<- log(sum(A_list[[omega[w,i]]]%*%Y_t))+logl_t
+    loglt_sum<- log(sum(A_list[[omega[w,i]]]%*%Y_t))+loglt_sum
   }
-  return(logl_t)
+  return(loglt_sum)
 })
-l_ap1c<- exp(mean(logltau_sum/tau))
+l_ap2b<- exp(mean(logLtau/tau))
 
-##################################################
-# METHOD 2: SINGLE SAMPLE PATH                   #
-# ABOVE SHOULD BE MORE RELIABLE BUT IF YOU       #
-# NEEDED TO CUT OUT REPLICATES FOR SOME REASON   #
-# YOU COULD TRY THE FOLLOWING                    #
-##################################################
-tau<- 20000
-test<- sapply(1:100, function(x)
+
+### TEST CONVERGENCE
+#### CHECK log(Ltau2) IS APPROXIMATELY NORMALLY DISTRIBUTED
+# 2A:
+hist(log(Ltau2))
+qqnorm(log(Ltau2))
+qqline(log(Ltau2), col="red", lty=3)
+# 2B: 
+hist(logLtau)
+qqnorm(logLtau)
+qqline(logLtau, col="red", lty=3)
+
+#### CHECK THAT THE QUANTILES OF EARLIER AND LATER RUNS ARE SIMILAR
+#### AND DISTRIBUTION IS NOT CHANGING -- MAY NEED LARGER TAU
+##### RERUN ABOVE BUT STORE LOG OF ANNUAL GROWTH RATES 
+##### (DONE WITH METHOD 2B BUT CAN ALSO BE DONE WITH 2A)
+logl_t<- sapply(1:M, function(w)
 {
-  omega<- sample(1:3, tau, replace=TRUE, prob=c(p1,p2,p3))
-  Y_t<- A_list[[omega[1]]]%*%Y0/sum(A_list[[omega[1]]]%*%Y0)
-  L_t<- sum(A_list[[omega[1]]]%*%Y0)
+  Y_t<- A_list[[omega[w,1]]]%*%Y0/sum(A_list[[omega[w,1]]]%*%Y0)
+  loglt<- log(sum(A_list[[omega[w,1]]]%*%Y0))
   for(i in 2:tau)
   {
-    Y_t<- A_list[[omega[i]]]%*%Y_t/sum(A_list[[omega[i]]]%*%Y_t)
-    L_t<- c(L_t, sum(A_list[[omega[i]]]%*%Y_t))
+    Y_t<- A_list[[omega[w,i]]]%*%Y_t/sum(A_list[[omega[w,i]]]%*%Y_t)
+    loglt<- c(loglt, log(sum(A_list[[omega[w,i]]]%*%Y_t)))
   }
-  return(log(prod(L_t))/tau)
+  return(loglt)
 })
+##### COMPARE QUANTILES FROM t=450 and t=500
+qqplot(colSums(logl_t[1:450,]), colSums(logl_t))
+abline(0,1, col="red", lty=3)
 
-plot(1:tau, log(cumprod(L_t)), type = "l")
-points(1:tau, 8*log(L_t[1])+log(prod(L_t))/tau*1:tau, type="l", col="red", lty=3)
+##### NOTE THAT THE GROWTH RATE OF A GIVEN RUN HAS CONVERGED
+x<- sample(1:M, 1)
+plot(1:tau, cumsum(logl_t[,x])/1:tau, type = "l")
+abline(sum(logl_t[,x])/tau,0,col="red", lty=3)
 
-plot(1:tau, log(cumprod(L_t))/1:tau, type = "l")
-abline(log(prod(L_t))/tau,0,col="red", lty=3)
+##### LOG GROWTH CONVERGES TO INCREASING LINEARLY -- LONGER TAU MAY BE 
+##### USEFUL FOR SEEING THIS/NEEDED FOR CONVERGENCE (SEE NEXT SECTION)
+plot(1:tau, cumsum(logl_t[,x]), type = "l")
+points(1:tau, logl_t[1,x]+sum(logl_t[,x])/tau*1:tau, type="l", col="red", lty=3)
+
+ 
+## METHOD 2B MAY BE BETTER WHEN A LONG TIME STEP IS NEEDED FOR 
+## CONVERGENCE IN SAMPLE PATHS
+## SAMPLE PATH LENGTH
+tau2<- 100000
+## GENERATE SAMPLE PATHS
+omega2<- sample(1:3, tau2, replace=TRUE, prob=c(p1,p2,p3))
+## APPLY METHOD 2A
+Y_t<- A_list[[omega2[1]]]%*%Y0/sum(A_list[[omega2[1]]]%*%Y0)
+L_t<- sum(A_list[[omega2[1]]]%*%Y0)
+for(i in 2:tau2)
+{
+  Y_t<- A_list[[omega2[i]]]%*%Y_t/sum(A_list[[omega2[i]]]%*%Y_t)
+  L_t<- sum(A_list[[omega2[i]]]%*%Y_t)*L_t
+}
+L_t
+exp(log(L_t)/tau2)
+## APPLY METHOD 2B
+Y_t<- A_list[[omega2[1]]]%*%Y0/sum(A_list[[omega2[1]]]%*%Y0)
+logL_t<- log(sum(A_list[[omega2[1]]]%*%Y0))
+for(i in 2:tau2)
+{
+  Y_t<- A_list[[omega2[i]]]%*%Y_t/sum(A_list[[omega2[i]]]%*%Y_t)
+  logL_t<- log(sum(A_list[[omega2[i]]]%*%Y_t))+logL_t
+}
+logL_t
+exp(logL_t/tau2)
+
+## METHOD 2B WITH logL_t STORED AND ABOVE PLOT REVISITED
+Y_t<- A_list[[omega2[1]]]%*%Y0/sum(A_list[[omega2[1]]]%*%Y0)
+logL_t<- log(sum(A_list[[omega2[1]]]%*%Y0))
+for(i in 2:tau2)
+{
+  Y_t<- A_list[[omega2[i]]]%*%Y_t/sum(A_list[[omega2[i]]]%*%Y_t)
+  logL_t<- c(logL_t, log(sum(A_list[[omega2[i]]]%*%Y_t))+logL_t[i-1])
+}
+plot(1:tau2, logL_t, type = "l")
+points(1:tau2, logL_t[1]+logL_t[tau2]/tau2*1:tau2, type="l", col="red", lty=3)
+  # SLOPES SHOULD BE APPROXIMATELY THE SAME (BUT INTERCEPT MAY BE OFF)
 
 ##################################################
-# METHOD 2: APPROXIMATION FORMULA                #
+# METHOD 3: APPROXIMATION FORMULA                #
+#           (TULJAPURKAR & CASWELL)              #
 # NOTE: ONLY IS A GOOD APPROXIMATION WHEN VITAL  # 
 #       RATE CVs<<1                              #
 ##################################################
@@ -147,7 +209,11 @@ H1<- A1-A
 H2<- A2-A
 H3<- A3-A
 # PAIRWISE COVARIANCES
-indx<- which(H1!=0)
+## NOTE:  THE APPROACH USED BELOW WORKS ONLY IF MATRICES H1, H2, AND 
+##        H3 HAVE NON-ZERO ELEMENTS IN ALL THE SAME PLACES (AND A IS
+##        NON-ZERO HERE TOO). THIS WILL OFTEN BE THE CASE, AND THE 
+##        APPROACH CAN BE MODIFIED TO ACCOUNT FOR DIFFERENCES.
+indx<- which(H1!=0) 
 COV1<- sapply(indx, function(x)
 {
   out<- sapply(indx, function(y)
@@ -191,8 +257,7 @@ CV<- sigs/A
 CV[is.na(CV)]<- 0
 max(CV) #0.2877
 ## VARIATION IN VITAL RATES COULD BE TOO LARGE TO USE THIS APPROXIMATION
-## (ALTHOUGH IT APPEARS TO BE DOING WELL)
-
+## (ALTHOUGH IT APPEARS TO BE DOING OKAY)
 
 
 #####################################################
